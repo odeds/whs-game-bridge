@@ -40,7 +40,7 @@ function useWindow(fake: FakeWindow) {
 }
 
 function readyPayload(gameId = "game") {
-  return { gameId, capabilities: ["pause", "restart", "checkpoint"] };
+  return { gameId, capabilities: ["pause", "restart", "checkpoint", "volume"] };
 }
 
 describe("host security and lifecycle", () => {
@@ -122,7 +122,7 @@ describe("host security and lifecycle", () => {
     host.destroy();
   });
 
-  it("supports pause, resume, restart, and a single set-volume message", () => {
+  it("retains advertised capabilities through the handshake and supports their commands", () => {
     const shell = new FakeWindow();
     const game = new FakeWindow();
     useWindow(shell);
@@ -133,6 +133,7 @@ describe("host security and lifecycle", () => {
     });
 
     shell.dispatch(message("whs.game.ready", undefined, readyPayload()), "https://game.test", game);
+    expect(host.capabilities).toEqual(["pause", "restart", "checkpoint", "volume"]);
     shell.dispatch(message("whs.game.initialized", host.sessionId), "https://game.test", game);
     host.start();
     shell.dispatch(message("whs.game.started", host.sessionId), "https://game.test", game);
@@ -147,6 +148,55 @@ describe("host security and lifecycle", () => {
     expect(host.setVolume(2)).toBe(false);
     expect(host.restart()).toBe(true);
     expect(host.state).toBe("initialized");
+    host.destroy();
+  });
+
+  it("does not send commands or accept checkpoints that were not advertised", () => {
+    const shell = new FakeWindow();
+    const game = new FakeWindow();
+    useWindow(shell);
+    const received: string[] = [];
+    const host = createGameHost({
+      iframe: { contentWindow: game } as unknown as HTMLIFrameElement,
+      gameId: "game",
+      expectedOrigin: "https://game.test",
+      onMessage: (incoming) => received.push(incoming.type),
+    });
+
+    shell.dispatch(message("whs.game.ready", undefined, { gameId: "game", capabilities: [] }), "https://game.test", game);
+    shell.dispatch(message("whs.game.initialized", host.sessionId), "https://game.test", game);
+    host.start();
+    shell.dispatch(message("whs.game.started", host.sessionId), "https://game.test", game);
+    const postsBeforeOptionalCommands = game.posts.length;
+
+    expect(host.pause()).toBe(false);
+    expect(host.restart()).toBe(false);
+    expect(host.setVolume(0.5)).toBe(false);
+    expect(game.posts).toHaveLength(postsBeforeOptionalCommands);
+
+    shell.dispatch(message("whs.game.checkpoint", host.sessionId, { checkpoint: "ignored" }), "https://game.test", game);
+    expect(received).not.toContain("whs.game.checkpoint");
+    host.destroy();
+  });
+
+  it("accepts checkpoints only when checkpoint was advertised", () => {
+    const shell = new FakeWindow();
+    const game = new FakeWindow();
+    useWindow(shell);
+    const received: string[] = [];
+    const host = createGameHost({
+      iframe: { contentWindow: game } as unknown as HTMLIFrameElement,
+      gameId: "game",
+      expectedOrigin: "https://game.test",
+      onMessage: (incoming) => received.push(incoming.type),
+    });
+
+    shell.dispatch(message("whs.game.ready", undefined, { gameId: "game", capabilities: ["checkpoint"] }), "https://game.test", game);
+    shell.dispatch(message("whs.game.initialized", host.sessionId), "https://game.test", game);
+    host.start();
+    shell.dispatch(message("whs.game.started", host.sessionId), "https://game.test", game);
+    shell.dispatch(message("whs.game.checkpoint", host.sessionId, { checkpoint: "wave-2" }), "https://game.test", game);
+    expect(received).toContain("whs.game.checkpoint");
     host.destroy();
   });
 
@@ -226,7 +276,11 @@ describe("game SDK", () => {
     gameWindow.parent = parent;
     useWindow(gameWindow);
     const callbacks = { start: 0, pause: 0, resume: 0, restart: 0 };
-    const bridge = createGameBridge({ gameId: "game", parentOrigin: "https://shell.test" });
+    const bridge = createGameBridge({
+      gameId: "game",
+      parentOrigin: "https://shell.test",
+      capabilities: ["pause", "restart"],
+    });
     bridge.onStart(() => callbacks.start++);
     bridge.onPause(() => callbacks.pause++);
     bridge.onResume(() => callbacks.resume++);
@@ -264,6 +318,55 @@ describe("game SDK", () => {
       "whs.game.started",
       "whs.game.completed",
     ]);
+    bridge.destroy();
+  });
+
+  it("ignores unsupported optional commands and does not emit unsupported checkpoints", async () => {
+    const gameWindow = new FakeWindow();
+    const parent = new FakeWindow();
+    gameWindow.parent = parent;
+    useWindow(gameWindow);
+    const callbacks = { pause: 0, restart: 0, volume: 0 };
+    const bridge = createGameBridge({ gameId: "game", parentOrigin: "https://shell.test" });
+    bridge.onPause(() => callbacks.pause++);
+    bridge.onRestart(() => callbacks.restart++);
+    bridge.onSetVolume(() => callbacks.volume++);
+    const ready = bridge.ready();
+    gameWindow.dispatch(message("whs.shell.initialize", "session", {
+      gameId: "game", settings: { volume: 1, soundEnabled: true },
+    }), "https://shell.test", parent);
+    await ready;
+    gameWindow.dispatch(message("whs.shell.start", "session"), "https://shell.test", parent);
+    bridge.started();
+    const postCount = parent.posts.length;
+
+    gameWindow.dispatch(message("whs.shell.pause", "session"), "https://shell.test", parent);
+    gameWindow.dispatch(message("whs.shell.restart", "session"), "https://shell.test", parent);
+    gameWindow.dispatch(message("whs.shell.set-volume", "session", { volume: 0.5 }), "https://shell.test", parent);
+    bridge.checkpoint({ checkpoint: "not-supported" });
+    expect(callbacks).toEqual({ pause: 0, restart: 0, volume: 0 });
+    expect(bridge.state).toBe("started");
+    expect(parent.posts).toHaveLength(postCount);
+    bridge.destroy();
+  });
+
+  it("emits checkpoints when checkpoint was advertised", async () => {
+    const gameWindow = new FakeWindow();
+    const parent = new FakeWindow();
+    gameWindow.parent = parent;
+    useWindow(gameWindow);
+    const bridge = createGameBridge({
+      gameId: "game", parentOrigin: "https://shell.test", capabilities: ["checkpoint"],
+    });
+    const ready = bridge.ready();
+    gameWindow.dispatch(message("whs.shell.initialize", "session", {
+      gameId: "game", settings: { volume: 1, soundEnabled: true },
+    }), "https://shell.test", parent);
+    await ready;
+    gameWindow.dispatch(message("whs.shell.start", "session"), "https://shell.test", parent);
+    bridge.started();
+    bridge.checkpoint({ checkpoint: "wave-2" });
+    expect(parent.posts.at(-1)?.data).toMatchObject({ type: "whs.game.checkpoint" });
     bridge.destroy();
   });
 
