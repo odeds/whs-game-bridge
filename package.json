@@ -12,7 +12,7 @@
     "build:sdk": "tsc -p tsconfig.json",
     "build:example": "tsc -p examples/mock-game/tsconfig.json",
     "typecheck": "tsc --noEmit && npm run build:sdk && tsc -p examples/mock-game/tsconfig.json --noEmit",
-    "test": "vitest run --exclude 'tests/browser/**'",
+    "test": "npm run build:sdk && tsc -p tsconfig.package-test.json && vitest run --exclude 'tests/browser/**'",
     "test:browser": "npm run build && playwright test",
     "prepare": "npm run build"
   },

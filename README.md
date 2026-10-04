@@ -15,7 +15,11 @@ The game must be embedded in an iframe and must be configured with the shell's e
 ```ts
 import { createGameBridge } from "@whs/game-bridge";
 
-const whs = createGameBridge({ gameId: "emu-war", parentOrigin: "https://whs.example" });
+const whs = createGameBridge({
+  gameId: "emu-war",
+  parentOrigin: "https://whs.example",
+  capabilities: ["pause", "restart", "checkpoint", "volume"],
+});
 whs.onStart(() => {
   startGame();
   whs.started(); // acknowledge that the game started
@@ -55,12 +59,43 @@ playButton.addEventListener("click", () => {
   if (game.state === "initialized") game.start();
 });
 
-// During play, the shell may call:
-game.pause();
-game.resume();
-game.restart();
-game.setVolume(0.5);
+// During play, only call optional controls the game advertised:
+if (game.capabilities.includes("pause")) game.pause();
+if (game.capabilities.includes("restart")) game.restart();
+if (game.capabilities.includes("volume")) game.setVolume(0.5);
 ```
+
+## Public API
+
+Import the SDK and protocol types from the package root; deep imports are not supported:
+
+```ts
+import {
+  createGameBridge, createGameHost,
+  PROTOCOL, PROTOCOL_VERSION,
+  gameCapabilities, hasGameCapability,
+  type GameBridge, type GameBridgeOptions, type GameState,
+  type GameHost, type GameHostOptions, type HostState,
+  type GameCapability, type GameCapabilities,
+  type GameMessage, type ShellMessage,
+  type ReadyPayload, type InitializePayload, type CheckpointPayload,
+  type CompletedPayload, type FailedPayload, type ErrorPayload,
+  type EventPayload, type EventProperties, type VolumePayload,
+} from "@whs/game-bridge";
+```
+
+## Lifecycle and capabilities
+
+`ready`, shell `initialize`, shell `start`, game `initialized`, and game `started` are mandatory lifecycle behavior. A game must always accept a valid `start` after initialization and acknowledge it with `started()` when it has started.
+
+The `capabilities` in `whs.game.ready` are authoritative declarations of optional behavior:
+
+- `pause` permits both shell `pause` and `resume`; without it, the host returns `false` and sends neither command, and the game ignores either command if received.
+- `restart` permits shell `restart`; without it, the host does not send it and the game ignores it.
+- `volume` permits shell `setVolume`; without it, the host does not send it and the game ignores it.
+- `checkpoint` permits the game to emit `whs.game.checkpoint`; without it, `bridge.checkpoint()` emits nothing and the host ignores checkpoint messages.
+
+`GameHost.capabilities` is the de-duplicated capability set from the accepted ready handshake. Use `hasGameCapability(game.capabilities, "pause")` when a typed check is preferable to `includes`.
 
 ## Protocol safety
 
