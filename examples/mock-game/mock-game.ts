@@ -9,7 +9,11 @@ function element<T extends HTMLElement>(id: string): T {
 const parentOrigin = new URLSearchParams(location.search).get("parentOrigin");
 if (!parentOrigin) throw new Error("parentOrigin query parameter is required");
 
-const bridge = createGameBridge({ gameId: "mock-game", parentOrigin });
+const bridge = createGameBridge({
+  gameId: "mock-game",
+  parentOrigin,
+  capabilities: ["pause", "restart", "checkpoint", "volume"],
+});
 const refresh = () => {
   element("state").textContent = bridge.state;
   element("session").textContent = bridge.sessionId || "—";

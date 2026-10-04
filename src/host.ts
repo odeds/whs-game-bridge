@@ -1,6 +1,8 @@
 import {
   PROTOCOL,
   PROTOCOL_VERSION,
+  hasGameCapability,
+  type GameCapability,
   type GameMessage,
   type InitializePayload,
   type ShellMessage,
@@ -33,6 +35,8 @@ export interface GameHostOptions {
 
 export interface GameHost {
   readonly state: HostState;
+  /** Optional behaviors advertised in the accepted whs.game.ready message. */
+  readonly capabilities: readonly GameCapability[];
   readonly sessionId: string;
   start(): boolean;
   pause(): boolean;
@@ -85,6 +89,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
   if (!validInitialize.ok) throw new Error(validInitialize.error);
 
   let current: HostState = "waiting";
+  let capabilities: readonly GameCapability[] = [];
   const setState = (state: HostState) => {
     current = state;
     options.onStateChange?.(state);
@@ -124,6 +129,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
 
     if (message.type === "whs.game.ready") {
       if (current !== "waiting" || message.payload.gameId !== options.gameId) return;
+      capabilities = Object.freeze([...new Set(message.payload.capabilities)]);
       if (!post("whs.shell.initialize", initializeMessage.payload)) return;
       setState("initializing");
       options.onMessage?.(message);
@@ -149,7 +155,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
         setState("started");
         break;
       case "whs.game.checkpoint":
-        if (current !== "started" && current !== "paused") return;
+        if (!hasGameCapability(capabilities, "checkpoint") || (current !== "started" && current !== "paused")) return;
         break;
       case "whs.game.completed":
         if (current !== "started" && current !== "paused") return;
@@ -169,11 +175,15 @@ export function createGameHost(options: GameHostOptions): GameHost {
 
   window.addEventListener("message", listener);
 
-  const action = (type: ShellMessage["type"], permitted: HostState[]) =>
-    permitted.includes(current) && post(type);
+  const action = (
+    type: ShellMessage["type"],
+    permitted: HostState[],
+    capability?: GameCapability,
+  ) => permitted.includes(current) && (!capability || hasGameCapability(capabilities, capability)) && post(type);
 
   return {
     get state() { return current; },
+    get capabilities() { return capabilities; },
     sessionId,
     start() {
       if (!action("whs.shell.start", ["initialized"])) return false;
@@ -181,17 +191,17 @@ export function createGameHost(options: GameHostOptions): GameHost {
       return true;
     },
     pause() {
-      if (!action("whs.shell.pause", ["started"])) return false;
+      if (!action("whs.shell.pause", ["started"], "pause")) return false;
       setState("paused");
       return true;
     },
     resume() {
-      if (!action("whs.shell.resume", ["paused"])) return false;
+      if (!action("whs.shell.resume", ["paused"], "pause")) return false;
       setState("started");
       return true;
     },
     restart() {
-      if (!action("whs.shell.restart", ["initialized", "starting", "started", "paused", "completed", "failed"])) {
+      if (!action("whs.shell.restart", ["initialized", "starting", "started", "paused", "completed", "failed"], "restart")) {
         return false;
       }
       setState("initialized");
@@ -200,6 +210,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
     setVolume(volume) {
       if (!Number.isFinite(volume) || volume < 0 || volume > 1) return false;
       if (!["initialized", "starting", "started", "paused"].includes(current)) return false;
+      if (!hasGameCapability(capabilities, "volume")) return false;
       return post("whs.shell.set-volume", { volume });
     },
     destroy() {

@@ -1,7 +1,14 @@
 export const PROTOCOL = "whs" as const;
 export const PROTOCOL_VERSION = 1 as const;
 
-export type GameCapability = "pause" | "restart" | "checkpoint" | "volume";
+export const gameCapabilities = ["pause", "restart", "checkpoint", "volume"] as const;
+export type GameCapability = (typeof gameCapabilities)[number];
+export type GameCapabilities = readonly GameCapability[];
+
+/** Returns whether a game advertised an optional Protocol v1 behavior. */
+export function hasGameCapability(capabilities: GameCapabilities, capability: GameCapability): boolean {
+  return capabilities.includes(capability);
+}
 export type GameMessageType =
   | "whs.game.ready"
   | "whs.game.initialized"
@@ -30,7 +37,7 @@ export interface Envelope<T = unknown> {
 
 export interface ReadyPayload {
   gameId: string;
-  capabilities: GameCapability[];
+  capabilities: GameCapabilities;
 }
 export interface InitializePayload {
   gameId: string;

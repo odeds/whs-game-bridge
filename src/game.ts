@@ -6,7 +6,8 @@ import {
   type ErrorPayload,
   type EventPayload,
   type FailedPayload,
-  type GameCapability,
+  hasGameCapability,
+  type GameCapabilities,
   type GameMessage,
   type ShellMessage,
 } from "./protocol.js";
@@ -27,7 +28,7 @@ export type GameState =
 export interface GameBridgeOptions {
   gameId: string;
   parentOrigin: string;
-  capabilities?: GameCapability[];
+  capabilities?: GameCapabilities;
   handshakeTimeoutMs?: number;
 }
 
@@ -71,11 +72,12 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
 
   const parentOrigin = normalizeOrigin(options.parentOrigin);
   const handshakeTimeoutMs = timeoutMs(options.handshakeTimeoutMs);
+  const capabilities = [...new Set(options.capabilities ?? [])];
   const readyMessage = {
     protocol: PROTOCOL,
     version: PROTOCOL_VERSION,
     type: "whs.game.ready",
-    payload: { gameId: options.gameId, capabilities: options.capabilities ?? [] },
+    payload: { gameId: options.gameId, capabilities },
   } as const;
   const validReady = parseGameMessage(readyMessage);
   if (!validReady.ok) throw new Error(validReady.error);
@@ -133,19 +135,19 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
         current = "starting";
         break;
       case "whs.shell.pause":
-        if (current !== "started") return;
+        if (!hasGameCapability(capabilities, "pause") || current !== "started") return;
         current = "paused";
         break;
       case "whs.shell.resume":
-        if (current !== "paused") return;
+        if (!hasGameCapability(capabilities, "pause") || current !== "paused") return;
         current = "started";
         break;
       case "whs.shell.restart":
-        if (!["initialized", "starting", "started", "paused", "completed", "failed"].includes(current)) return;
+        if (!hasGameCapability(capabilities, "restart") || !["initialized", "starting", "started", "paused", "completed", "failed"].includes(current)) return;
         current = "initialized";
         break;
       case "whs.shell.set-volume":
-        if (!["initialized", "starting", "started", "paused"].includes(current)) return;
+        if (!hasGameCapability(capabilities, "volume") || !["initialized", "starting", "started", "paused"].includes(current)) return;
         break;
     }
     notify(message);
@@ -186,7 +188,9 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
       current = "started";
     },
     checkpoint(payload) {
-      if (current === "started" || current === "paused") emit("whs.game.checkpoint", payload);
+      if (hasGameCapability(capabilities, "checkpoint") && (current === "started" || current === "paused")) {
+        emit("whs.game.checkpoint", payload);
+      }
     },
     completed(payload) {
       if (current !== "started" && current !== "paused") return;

@@ -1,7 +1,9 @@
 import {
   PROTOCOL,
   PROTOCOL_VERSION,
+  gameCapabilities,
   type EventProperties,
+  type GameCapability,
   type GameMessage,
   type ShellMessage,
 } from "./protocol.js";
@@ -11,7 +13,9 @@ export type ValidationResult<T> =
   | { ok: false; error: string };
 
 const MAX_MESSAGE_BYTES = 8192;
-const capabilities = new Set(["pause", "restart", "checkpoint", "volume"]);
+const capabilities = new Set<GameCapability>(gameCapabilities);
+const isGameCapability = (value: unknown): value is GameCapability =>
+  typeof value === "string" && capabilities.has(value as GameCapability);
 const fail = <T>(error: string): ValidationResult<T> => ({ ok: false, error });
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,9 +70,7 @@ export function parseGameMessage(data: unknown): ValidationResult<GameMessage> {
         !isString(payload.gameId, 128) ||
         !Array.isArray(payload.capabilities) ||
         message.sessionId !== undefined ||
-        payload.capabilities.some(
-          (capability) => typeof capability !== "string" || !capabilities.has(capability),
-        )
+        payload.capabilities.some((capability) => !isGameCapability(capability))
       ) return fail("invalid ready payload");
       break;
     case "whs.game.initialized":

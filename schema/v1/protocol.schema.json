@@ -62,6 +62,7 @@
               "properties": {
                 "gameId": { "type": "string", "minLength": 1, "maxLength": 128 },
                 "capabilities": {
+                  "description": "Authoritative optional behaviors supported by the game; see the Protocol v1 capability semantics in the package README.",
                   "type": "array",
                   "items": { "enum": ["pause", "restart", "checkpoint", "volume"] }
                 }
