@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://whs.example/schema/game-bridge/v1/protocol.schema.json",
+  "title": "WHS Protocol v1 message",
+  "description": "A Protocol v1 message. Implementations also enforce an 8192-byte serialized message limit.",
+  "oneOf": [
+    { "$ref": "#/$defs/gameReady" },
+    { "$ref": "#/$defs/gameInitialized" },
+    { "$ref": "#/$defs/gameStarted" },
+    { "$ref": "#/$defs/gameCheckpoint" },
+    { "$ref": "#/$defs/gameCompleted" },
+    { "$ref": "#/$defs/gameFailed" },
+    { "$ref": "#/$defs/gameError" },
+    { "$ref": "#/$defs/gameEvent" },
+    { "$ref": "#/$defs/shellInitialize" },
+    { "$ref": "#/$defs/shellStart" },
+    { "$ref": "#/$defs/shellPause" },
+    { "$ref": "#/$defs/shellResume" },
+    { "$ref": "#/$defs/shellRestart" },
+    { "$ref": "#/$defs/shellSetVolume" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["protocol", "version", "type"],
+      "properties": {
+        "protocol": { "const": "whs" },
+        "version": { "const": 1 },
+        "type": { "type": "string" },
+        "sessionId": { "$ref": "#/$defs/sessionId" }
+      },
+      "additionalProperties": true
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "sessionRequired": {
+      "type": "object",
+      "required": ["sessionId"]
+    },
+    "noPayload": {
+      "not": { "required": ["payload"] }
+    },
+    "noSession": {
+      "not": { "required": ["sessionId"] }
+    },
+    "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+    "gameReady": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/noSession" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.game.ready" },
+            "payload": {
+              "type": "object",
+              "required": ["gameId", "capabilities"],
+              "properties": {
+                "gameId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "capabilities": {
+                  "type": "array",
+                  "items": { "enum": ["pause", "restart", "checkpoint", "volume"] }
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "gameInitialized": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.game.initialized" } } }
+      ]
+    },
+    "gameStarted": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.game.started" } } }
+      ]
+    },
+    "gameCheckpoint": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.game.checkpoint" },
+            "payload": {
+              "type": "object",
+              "required": ["checkpoint"],
+              "properties": { "checkpoint": { "type": "string", "minLength": 1, "maxLength": 256 } },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "gameCompleted": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "properties": {
+            "type": { "const": "whs.game.completed" },
+            "payload": {
+              "type": "object",
+              "properties": { "score": { "type": "number" } },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "gameFailed": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.game.failed" },
+            "payload": {
+              "type": "object",
+              "required": ["reason"],
+              "properties": { "reason": { "type": "string", "minLength": 1, "maxLength": 256 } },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "gameError": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.game.error" },
+            "payload": {
+              "type": "object",
+              "required": ["message"],
+              "properties": {
+                "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "code": { "type": "string", "minLength": 1, "maxLength": 128 }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "gameEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.game.event" },
+            "payload": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+                "properties": {
+                  "type": "object",
+                  "maxProperties": 20,
+                  "additionalProperties": { "type": ["string", "number", "boolean"] }
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "shellInitialize": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.shell.initialize" },
+            "payload": {
+              "type": "object",
+              "required": ["gameId", "settings"],
+              "properties": {
+                "gameId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "settings": {
+                  "type": "object",
+                  "required": ["volume", "soundEnabled"],
+                  "properties": {
+                    "volume": { "$ref": "#/$defs/volume" },
+                    "soundEnabled": { "type": "boolean" }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    },
+    "shellStart": {
+      "allOf": [
+        { "$ref": "#/$defs/base" }, { "$ref": "#/$defs/sessionRequired" }, { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.shell.start" } } }
+      ]
+    },
+    "shellPause": {
+      "allOf": [
+        { "$ref": "#/$defs/base" }, { "$ref": "#/$defs/sessionRequired" }, { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.shell.pause" } } }
+      ]
+    },
+    "shellResume": {
+      "allOf": [
+        { "$ref": "#/$defs/base" }, { "$ref": "#/$defs/sessionRequired" }, { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.shell.resume" } } }
+      ]
+    },
+    "shellRestart": {
+      "allOf": [
+        { "$ref": "#/$defs/base" }, { "$ref": "#/$defs/sessionRequired" }, { "$ref": "#/$defs/noPayload" },
+        { "properties": { "type": { "const": "whs.shell.restart" } } }
+      ]
+    },
+    "shellSetVolume": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        { "$ref": "#/$defs/sessionRequired" },
+        {
+          "required": ["payload"],
+          "properties": {
+            "type": { "const": "whs.shell.set-volume" },
+            "payload": {
+              "type": "object",
+              "required": ["volume"],
+              "properties": { "volume": { "$ref": "#/$defs/volume" } },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

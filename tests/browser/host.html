@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <body>
+    <div id="state">waiting</div>
+    <div id="last-message">—</div>
+    <div id="checkpoint-count">0</div>
+    <iframe id="game"></iframe>
+    <script type="module">
+      import { createGameHost } from "/dist/index.js";
+
+      const origin = "http://127.0.0.1:4174";
+      const frame = document.querySelector("#game");
+      const state = document.querySelector("#state");
+      const lastMessage = document.querySelector("#last-message");
+      const checkpointCount = document.querySelector("#checkpoint-count");
+      let checkpoints = 0;
+
+      frame.src = `${origin}/examples/mock-game/index.html?parentOrigin=${encodeURIComponent(location.origin)}`;
+      window.host = createGameHost({
+        iframe: frame,
+        gameId: "mock-game",
+        expectedOrigin: origin,
+        handshakeTimeoutMs: 1000,
+        onStateChange: (nextState) => { state.textContent = nextState; },
+        onMessage: (message) => {
+          lastMessage.textContent = message.type;
+          if (message.type === "whs.game.checkpoint") {
+            checkpoints += 1;
+            checkpointCount.textContent = String(checkpoints);
+          }
+        },
+      });
+    </script>
+  </body>
+</html>
