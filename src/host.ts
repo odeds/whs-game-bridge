@@ -1,58 +1,211 @@
-import { PROTOCOL, PROTOCOL_VERSION, type GameMessage, type InitializePayload } from "./protocol.js";
-import { parseGameMessage } from "./validation.js";
+import {
+  PROTOCOL,
+  PROTOCOL_VERSION,
+  type GameMessage,
+  type InitializePayload,
+  type ShellMessage,
+} from "./protocol.js";
+import { parseGameMessage, parseShellMessage } from "./validation.js";
 
-export type HostState = "waiting" | "initializing" | "initialized" | "started" | "paused" | "completed" | "failed" | "timed-out" | "destroyed";
+export type HostState =
+  | "waiting"
+  | "initializing"
+  | "initialized"
+  | "starting"
+  | "started"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "timed-out"
+  | "destroyed";
+
 export interface GameHostOptions {
-  iframe: HTMLIFrameElement; gameId: string; expectedOrigin: string;
-  settings?: InitializePayload["settings"]; handshakeTimeoutMs?: number;
-  onMessage?: (message: GameMessage) => void; onStateChange?: (state: HostState) => void; onProtocolError?: (reason: string) => void;
+  iframe: HTMLIFrameElement;
+  gameId: string;
+  expectedOrigin: string;
+  settings?: InitializePayload["settings"];
+  handshakeTimeoutMs?: number;
+  onMessage?: (message: GameMessage) => void;
+  onStateChange?: (state: HostState) => void;
+  onProtocolError?: (reason: string) => void;
 }
+
 export interface GameHost {
-  readonly state: HostState; readonly sessionId: string;
-  start(): boolean; pause(): boolean; resume(): boolean; restart(): boolean; setVolume(volume: number): boolean; destroy(): void;
+  readonly state: HostState;
+  readonly sessionId: string;
+  start(): boolean;
+  pause(): boolean;
+  resume(): boolean;
+  restart(): boolean;
+  setVolume(volume: number): boolean;
+  destroy(): void;
 }
-const normalizedOrigin = (value: string) => new URL(value).origin;
-const randomSession = () => {
+
+function normalizeOrigin(value: string): string {
+  const url = new URL(value);
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.origin === "null") {
+    throw new Error("expectedOrigin must be an HTTP(S) origin");
+  }
+  return url.origin;
+}
+
+function randomSession(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  if (!globalThis.crypto?.getRandomValues) throw new Error("secure random session IDs require Web Crypto");
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("secure random session IDs require Web Crypto");
+  }
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
+}
+
+function timeoutMs(value: number | undefined): number {
+  if (value === undefined) return 10000;
+  if (!Number.isFinite(value) || value < 0) throw new Error("handshakeTimeoutMs must be non-negative");
+  return value;
+}
 
 export function createGameHost(options: GameHostOptions): GameHost {
-  if (!options.gameId || !options.expectedOrigin || options.expectedOrigin === "*") throw new Error("gameId and explicit expectedOrigin are required");
-  const expectedOrigin = normalizedOrigin(options.expectedOrigin); const sessionId = randomSession(); let current: HostState = "waiting";
-  const set = (state: HostState) => { current = state; options.onStateChange?.(state); };
-  const post = (type: string, payload?: unknown) => {
-    const target = options.iframe.contentWindow; if (!target) return false;
-    target.postMessage({ protocol: PROTOCOL, version: PROTOCOL_VERSION, type, sessionId, ...(payload === undefined ? {} : { payload }) }, expectedOrigin); return true;
+  if (!options.gameId || !options.expectedOrigin || options.expectedOrigin === "*") {
+    throw new Error("gameId and explicit expectedOrigin are required");
+  }
+
+  const expectedOrigin = normalizeOrigin(options.expectedOrigin);
+  const sessionId = randomSession();
+  const settings = options.settings ?? { volume: 1, soundEnabled: true };
+  const handshakeTimeoutMs = timeoutMs(options.handshakeTimeoutMs);
+  const initializeMessage = {
+    protocol: PROTOCOL,
+    version: PROTOCOL_VERSION,
+    type: "whs.shell.initialize",
+    sessionId,
+    payload: { gameId: options.gameId, settings },
+  } as const;
+  const validInitialize = parseShellMessage(initializeMessage);
+  if (!validInitialize.ok) throw new Error(validInitialize.error);
+
+  let current: HostState = "waiting";
+  const setState = (state: HostState) => {
+    current = state;
+    options.onStateChange?.(state);
   };
-  const timeout = setTimeout(() => { if (current === "waiting") { set("timed-out"); options.onProtocolError?.("game ready handshake timed out"); } }, options.handshakeTimeoutMs ?? 10000);
+
+  const post = (type: ShellMessage["type"], payload?: unknown) => {
+    const target = options.iframe.contentWindow;
+    if (!target) return false;
+    const candidate = {
+      protocol: PROTOCOL,
+      version: PROTOCOL_VERSION,
+      type,
+      sessionId,
+      ...(payload === undefined ? {} : { payload }),
+    };
+    const parsed = parseShellMessage(candidate);
+    if (!parsed.ok) throw new TypeError(parsed.error);
+    target.postMessage(parsed.value, expectedOrigin);
+    return true;
+  };
+
+  const timeout = setTimeout(() => {
+    if (current !== "waiting" && current !== "initializing") return;
+    setState("timed-out");
+    options.onProtocolError?.("game initialization handshake timed out");
+  }, handshakeTimeoutMs);
+
   const listener = (event: MessageEvent) => {
     if (event.source !== options.iframe.contentWindow || event.origin !== expectedOrigin) return;
-    const parsed = parseGameMessage(event.data); if (!parsed.ok) { options.onProtocolError?.(parsed.error); return; }
-    const message = parsed.value;
-    if (message.type === "whs.game.ready") {
-      if (current !== "waiting" || message.payload!.gameId !== options.gameId) return;
-      set("initializing"); post("whs.shell.initialize", { gameId: options.gameId, settings: options.settings ?? { volume: 1, soundEnabled: true } }); options.onMessage?.(message); return;
+
+    const parsed = parseGameMessage(event.data);
+    if (!parsed.ok) {
+      options.onProtocolError?.(parsed.error);
+      return;
     }
-    if (message.sessionId !== sessionId || current === "timed-out" || current === "destroyed") return;
-    if (message.type === "whs.game.initialized") { if (current !== "initializing") return; set("initialized"); clearTimeout(timeout); }
-    else if (message.type === "whs.game.started") { if (current !== "started") return; }
-    else if (message.type === "whs.game.checkpoint") { if (current !== "started" && current !== "paused") return; }
-    else if (message.type === "whs.game.completed") { if (current !== "started" && current !== "paused") return; set("completed"); }
-    else if (message.type === "whs.game.failed") { if (current !== "started" && current !== "paused") return; set("failed"); }
+    const message = parsed.value;
+
+    if (message.type === "whs.game.ready") {
+      if (current !== "waiting" || message.payload.gameId !== options.gameId) return;
+      if (!post("whs.shell.initialize", initializeMessage.payload)) return;
+      setState("initializing");
+      options.onMessage?.(message);
+      return;
+    }
+
+    if (
+      message.sessionId !== sessionId ||
+      current === "timed-out" ||
+      current === "destroyed" ||
+      current === "completed" ||
+      current === "failed"
+    ) return;
+
+    switch (message.type) {
+      case "whs.game.initialized":
+        if (current !== "initializing") return;
+        clearTimeout(timeout);
+        setState("initialized");
+        break;
+      case "whs.game.started":
+        if (current !== "starting") return;
+        setState("started");
+        break;
+      case "whs.game.checkpoint":
+        if (current !== "started" && current !== "paused") return;
+        break;
+      case "whs.game.completed":
+        if (current !== "started" && current !== "paused") return;
+        setState("completed");
+        break;
+      case "whs.game.failed":
+        if (current !== "started" && current !== "paused") return;
+        setState("failed");
+        break;
+      case "whs.game.error":
+      case "whs.game.event":
+        if (!["initialized", "starting", "started", "paused"].includes(current)) return;
+        break;
+    }
     options.onMessage?.(message);
   };
+
   window.addEventListener("message", listener);
-  const action = (type: string, permitted: HostState[]) => permitted.includes(current) && post(type);
+
+  const action = (type: ShellMessage["type"], permitted: HostState[]) =>
+    permitted.includes(current) && post(type);
+
   return {
-    get state() { return current; }, sessionId,
-    start() { if (!action("whs.shell.start", ["initialized"])) return false; set("started"); return true; },
-    pause() { if (!action("whs.shell.pause", ["started"])) return false; set("paused"); return true; },
-    resume() { if (!action("whs.shell.resume", ["paused"])) return false; set("started"); return true; },
-    restart() { if (!action("whs.shell.restart", ["initialized", "started", "paused", "completed", "failed"])) return false; set("initialized"); return true; },
-    setVolume(volume) { return Number.isFinite(volume) && volume >= 0 && volume <= 1 && ["initialized", "started", "paused"].includes(current) && post("whs.shell.set-volume", { volume }); },
-    destroy() { set("destroyed"); clearTimeout(timeout); window.removeEventListener("message", listener); },
+    get state() { return current; },
+    sessionId,
+    start() {
+      if (!action("whs.shell.start", ["initialized"])) return false;
+      setState("starting");
+      return true;
+    },
+    pause() {
+      if (!action("whs.shell.pause", ["started"])) return false;
+      setState("paused");
+      return true;
+    },
+    resume() {
+      if (!action("whs.shell.resume", ["paused"])) return false;
+      setState("started");
+      return true;
+    },
+    restart() {
+      if (!action("whs.shell.restart", ["initialized", "starting", "started", "paused", "completed", "failed"])) {
+        return false;
+      }
+      setState("initialized");
+      return true;
+    },
+    setVolume(volume) {
+      if (!Number.isFinite(volume) || volume < 0 || volume > 1) return false;
+      if (!["initialized", "starting", "started", "paused"].includes(current)) return false;
+      return post("whs.shell.set-volume", { volume });
+    },
+    destroy() {
+      if (current === "destroyed") return;
+      clearTimeout(timeout);
+      window.removeEventListener("message", listener);
+      setState("destroyed");
+    },
   };
 }

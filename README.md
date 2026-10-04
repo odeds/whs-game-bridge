@@ -16,14 +16,15 @@ The game must be embedded in an iframe and must be configured with the shell's e
 import { createGameBridge } from "@whs/game-bridge";
 
 const whs = createGameBridge({ gameId: "emu-war", parentOrigin: "https://whs.example" });
-await whs.ready();                 // sends ready; resolves after shell initialize
-whs.onStart(() => startGame());
+whs.onStart(() => {
+  startGame();
+  whs.started(); // acknowledge that the game started
+});
 whs.onPause(() => pauseGame());
 whs.onResume(() => resumeGame());
 whs.onRestart(() => resetGame());
 
-// after the shell sends start:
-whs.started();
+await whs.ready(); // sends ready; resolves after shell initialize
 whs.checkpoint({ checkpoint: "wave-2" });
 whs.completed({ score: 1250 });
 ```
@@ -35,23 +36,35 @@ whs.completed({ score: 1250 });
 ```ts
 import { createGameHost } from "@whs/game-bridge";
 
+const playButton = document.querySelector<HTMLButtonElement>("#play")!;
 const game = createGameHost({
   iframe: document.querySelector("#game")!,
   gameId: "emu-war",
   expectedOrigin: "https://games.example",
   settings: { volume: 0.8, soundEnabled: true },
   onMessage: (message) => console.log(message.type),
+  onStateChange: (state) => {
+    if (state === "initialized") {
+      // Enable the shell's Play button; call game.start() from its handler.
+    }
+  },
 });
 
 // The host automatically sends initialize after a valid game ready + origin/source check.
-// Call only after initialized (for example, from onStateChange).
-game.start();
-game.pause(); game.resume(); game.restart(); game.setVolume(0.5);
+playButton.addEventListener("click", () => {
+  if (game.state === "initialized") game.start();
+});
+
+// During play, the shell may call:
+game.pause();
+game.resume();
+game.restart();
+game.setVolume(0.5);
 ```
 
 ## Protocol safety
 
-All received messages are runtime-validated. Protocol v1 accepts only its documented message types, version `1`, bounded payloads (whole serialized message ≤8 KiB), and session IDs after initialization. `whs.game.event` is deliberately bounded: its name is 64 characters max and its optional properties contain at most 20 primitive values. Unknown additive fields are ignored for v1 compatibility.
+All received messages are runtime-validated. Protocol v1 accepts only its documented message types, version `1`, bounded payloads (whole UTF-8 serialized message ≤8 KiB), and session IDs after initialization. `whs.game.event` is deliberately bounded: its name is 64 characters max and its optional properties contain at most 20 primitive values. Unknown additive fields are ignored for v1 compatibility.
 
 No player identity, authentication, tokens, persistence, analytics, or WHS API access belongs in this protocol.
 

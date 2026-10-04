@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "baseUrl": "../..",
+    "paths": { "@whs/game-bridge": ["dist/index.d.ts"] },
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "rootDir": ".",
+    "outDir": "build",
+    "skipLibCheck": true
+  },
+  "include": ["mock-game.ts"]
+}
