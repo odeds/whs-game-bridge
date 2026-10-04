@@ -1,0 +1,21 @@
+{
+  "name": "@whs/game-bridge",
+  "version": "0.1.0",
+  "description": "Small, framework-independent postMessage bridge for WHS browser games",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "schema", "examples/mock-game"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude 'tests/browser/**'", 
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}

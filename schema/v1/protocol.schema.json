@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WHS Protocol v1 envelope",
+  "type": "object",
+  "required": ["protocol", "version", "type"],
+  "properties": {
+    "protocol": { "const": "whs" },
+    "version": { "const": 1 },
+    "type": { "enum": ["whs.game.ready", "whs.game.initialized", "whs.game.started", "whs.game.checkpoint", "whs.game.completed", "whs.game.failed", "whs.game.error", "whs.game.event", "whs.shell.initialize", "whs.shell.start", "whs.shell.pause", "whs.shell.resume", "whs.shell.restart", "whs.shell.set-volume"] },
+    "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+    "payload": {}
+  },
+  "additionalProperties": true,
+  "description": "Payload requirements are type-specific and enforced at runtime by parseGameMessage/parseShellMessage. Event properties are at most 20 primitive values and the serialized envelope is at most 8192 bytes."
+}
