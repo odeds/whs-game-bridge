@@ -26,7 +26,7 @@ export interface GameHostOptions {
   gameId: string;
   expectedOrigin: string;
   settings?: InitializePayload["settings"];
-  checkpoint?: InitializePayload["checkpoint"]; 
+  checkpoint?: InitializePayload["checkpoint"];
   handshakeTimeoutMs?: number;
   onMessage?: (message: GameMessage) => void;
   onStateChange?: (state: HostState) => void;
