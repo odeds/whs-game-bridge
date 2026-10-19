@@ -125,6 +125,44 @@ describe('host v2', () => {
     expect(disconnect).toHaveBeenCalledOnce();
     expect(game.posts).toHaveLength(initial);
   });
+  it('coalesces changing iframe content size, DPR, orientation and fullscreen updates', () => {
+    const shell = new FakeWindow(), game = new FakeWindow(); environment(shell);
+    const callbacks = new Map<string, () => void>();
+    const documentStub = {
+      fullscreenElement: null as Element | null,
+      addEventListener: (type: string, callback: () => void) => callbacks.set(type, callback),
+      removeEventListener: (type: string) => callbacks.delete(type),
+    };
+    (globalThis as { document: unknown }).document = documentStub;
+    let pending: FrameRequestCallback | undefined;
+    shell.requestAnimationFrame = (fn) => { pending = fn; return 1; };
+    const flush = () => { const fn = pending; pending = undefined; fn?.(0); };
+    let width = 800, height = 450;
+    const element = {
+      contentWindow: game,
+      get clientWidth() { return width; },
+      get clientHeight() { return height; },
+      getBoundingClientRect: () => ({ width: width + 4, height: height + 4 }),
+    } as unknown as HTMLIFrameElement;
+    const host = createGameHost({ iframe: element, gameId: 'game', expectedOrigin: 'https://game.test' });
+    shell.dispatch(ready, 'https://game.test', game);
+    shell.dispatch(msg('whs.game.initialized', host.sessionId), 'https://game.test', game);
+    flush();
+    expect(game.posts.at(-1)?.data.payload).toEqual({ width: 800, height: 450, devicePixelRatio: 2, fullscreen: false });
+    const count = game.posts.length;
+    shell.dispatch(null, 'https://irrelevant.test', null); // no incoming resize messages
+    shell.listeners.forEach(listener => listener({ type: 'resize' } as MessageEvent));
+    flush(); expect(game.posts).toHaveLength(count);
+    width = 640; height = 360; shell.devicePixelRatio = 3;
+    shell.listeners.forEach(listener => listener({ type: 'orientationchange' } as MessageEvent));
+    flush();
+    expect(game.posts.at(-1)?.data.payload).toMatchObject({ width: 640, height: 360, devicePixelRatio: 3 });
+    documentStub.fullscreenElement = { contains: (target: unknown) => target === element } as Element;
+    callbacks.get('fullscreenchange')?.(); flush();
+    expect(game.posts.at(-1)?.data.payload.fullscreen).toBe(true);
+    host.destroy();
+    expect(callbacks.has('fullscreenchange')).toBe(false);
+  });
   it('times out without initializing', () => {
     vi.useFakeTimers(); const shell = new FakeWindow(), game = new FakeWindow(); environment(shell);
     const host = createGameHost({ iframe: iframe(game), gameId: 'game', expectedOrigin: 'https://game.test', handshakeTimeoutMs: 5 });
