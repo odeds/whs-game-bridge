@@ -99,7 +99,9 @@ export function createGameHost(options: GameHostOptions): GameHost {
     const rect = options.iframe.getBoundingClientRect();
     const fullscreenElement = document.fullscreenElement;
     const viewport: ViewportInfo = {
-      width: rect.width, height: rect.height,
+      // clientWidth/Height describe the embedded browsing context, excluding iframe borders.
+      width: options.iframe.clientWidth || rect.width,
+      height: options.iframe.clientHeight || rect.height,
       devicePixelRatio: window.devicePixelRatio || 1,
       fullscreen: !!fullscreenElement && (fullscreenElement === options.iframe || fullscreenElement.contains(options.iframe)),
     };
