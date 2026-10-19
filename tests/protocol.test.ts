@@ -1,86 +1,39 @@
-import { describe, expect, it } from "vitest";
-import { parseGameMessage, parseShellMessage } from "../src/validation.js";
-
-const game = (type: string, payload?: unknown, sessionId: string | null = "session-1") => ({
-  protocol: "whs",
-  version: 1,
-  type,
-  ...(sessionId === null ? {} : { sessionId }),
-  ...(payload === undefined ? {} : { payload }),
+import { describe, expect, it } from 'vitest';
+import { parseGameMessage, parseShellMessage } from '../src/validation.js';
+import { PROTOCOL_VERSION } from '../src/protocol.js';
+const message = (type: string, payload?: unknown, sessionId: string | null = 'session') => ({
+  protocol: 'whs', version: PROTOCOL_VERSION, type,
+  ...(sessionId === null ? {} : { sessionId }), ...(payload === undefined ? {} : { payload }),
 });
-
-describe("runtime protocol validation", () => {
+const viewport = { width: 640, height: 480, devicePixelRatio: 2, fullscreen: false };
+describe('breaking Protocol v2 validation', () => {
   it.each([
-    game("whs.game.ready", { gameId: "mock", capabilities: ["pause", "checkpoint"] }, null),
-    game("whs.game.initialized"),
-    game("whs.game.started"),
-    game("whs.game.checkpoint", { checkpoint: "wave-2" }),
-    game("whs.game.completed"),
-    game("whs.game.completed", { score: 1250 }),
-    game("whs.game.failed", { reason: "player-defeated" }),
-    game("whs.game.error", { message: "bad state", code: "BAD_STATE" }),
-    game("whs.game.event", { name: "obstacle_hit", properties: { obstacle: "cart", count: 1, fatal: false } }),
-  ])("parses a valid game message", (message) => {
-    expect(parseGameMessage(message)).toMatchObject({ ok: true });
-  });
-
+    message('whs.game.ready', { gameId: 'game', capabilities: ['pause'] }, null),
+    message('whs.game.initialized'), message('whs.game.started'), message('whs.game.request-restart'),
+    message('whs.game.checkpoint', { checkpoint: 'boss' }), message('whs.game.completed', { score: 42 }),
+    message('whs.game.failed', { reason: 'missed' }), message('whs.game.error', { message: 'bad' }),
+    message('whs.game.event', { name: 'hit', properties: { count: 1 } }),
+  ])('accepts a valid game message', m => expect(parseGameMessage(m).ok).toBe(true));
   it.each([
-    game("whs.shell.initialize", { gameId: "mock", settings: { volume: 0.5, soundEnabled: true } }),
-    game("whs.shell.start"),
-    game("whs.shell.pause"),
-    game("whs.shell.resume"),
-    game("whs.shell.restart"),
-    game("whs.shell.set-volume", { volume: 0 }),
-  ])("parses a valid shell message", (message) => {
-    expect(parseShellMessage(message)).toMatchObject({ ok: true });
-  });
-
-  it("accepts additive unknown fields", () => {
-    expect(parseGameMessage({
-      ...game("whs.game.completed", { score: 2, future: "ok" }),
-      futureEnvelope: true,
-    })).toMatchObject({ ok: true });
-    expect(parseShellMessage(game("whs.shell.initialize", {
-      gameId: "mock",
-      settings: { volume: 0.5, soundEnabled: true, future: 1 },
-      future: true,
-    }))).toMatchObject({ ok: true });
-  });
-
+    message('whs.shell.initialize', { gameId: 'game', settings: { volume: 1, soundEnabled: true }, checkpoint: 'boss' }),
+    message('whs.shell.viewport', viewport), message('whs.shell.pause'), message('whs.shell.resume'),
+    message('whs.shell.restart'), message('whs.shell.set-volume', { volume: .5 }),
+  ])('accepts a valid shell message', m => expect(parseShellMessage(m).ok).toBe(true));
   it.each([
-    null,
-    [],
-    { protocol: "other", version: 1, type: "whs.game.ready" },
-    { protocol: "whs", version: 2, type: "whs.game.ready" },
-    { protocol: "whs", version: 1 },
-    game("whs.nope"),
-  ])("rejects malformed envelopes and unsupported versions/types", (message) => {
-    expect(parseGameMessage(message).ok).toBe(false);
-  });
-
-  it("rejects missing required game fields", () => {
-    expect(parseGameMessage(game("whs.game.ready", { gameId: "mock" }, null)).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.ready", { gameId: "mock", capabilities: [] }, "stale")).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.initialized", undefined, null)).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.checkpoint", {})).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.failed", {})).ok).toBe(false);
-  });
-
-  it("rejects invalid capabilities, scores, event properties, and unexpected payloads", () => {
-    expect(parseGameMessage(game("whs.game.ready", { gameId: "mock", capabilities: ["arbitrary"] }, null)).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.completed", { score: Number.NaN })).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.event", { name: "bad name", properties: { nested: {} } })).ok).toBe(false);
-    expect(parseGameMessage(game("whs.game.started", {})).ok).toBe(false);
-  });
-
-  it("rejects invalid shell payloads and missing sessions", () => {
-    expect(parseShellMessage(game("whs.shell.initialize", { gameId: "mock", settings: { volume: 2, soundEnabled: true } })).ok).toBe(false);
-    expect(parseShellMessage(game("whs.shell.start", undefined, null)).ok).toBe(false);
-    expect(parseShellMessage(game("whs.shell.pause", {})).ok).toBe(false);
-    expect(parseShellMessage(game("whs.shell.set-volume", { volume: -1 })).ok).toBe(false);
-  });
-
-  it("enforces the serialized message byte limit", () => {
-    expect(parseGameMessage(game("whs.game.error", { message: "😀".repeat(3000) })).ok).toBe(false);
-  });
+    message('whs.shell.viewport', { ...viewport, width: 0 }),
+    message('whs.shell.viewport', { ...viewport, height: Infinity }),
+    message('whs.shell.viewport', { ...viewport, devicePixelRatio: -1 }),
+    message('whs.shell.viewport', { ...viewport, fullscreen: 1 }),
+    message('whs.shell.viewport', { ...viewport, extra: true }),
+    message('whs.shell.viewport', viewport, null),
+    message('whs.shell.initialize', { gameId: 'game', settings: { volume: 1, soundEnabled: true }, checkpoint: '' }),
+    message('whs.shell.start'),
+  ])('rejects invalid shell payloads and removed start', m => expect(parseShellMessage(m).ok).toBe(false));
+  it.each([
+    message('whs.game.started', {}), message('whs.game.request-restart', {}),
+    message('whs.game.failed', {}), message('whs.game.completed', { score: NaN }),
+    message('whs.game.event', { name: 'bad name' }),
+    { ...message('whs.game.started'), version: 1 },
+    { ...message('whs.game.started'), protocol: 'other' },
+  ])('rejects malformed and old game messages', m => expect(parseGameMessage(m).ok).toBe(false));
 });

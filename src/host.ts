@@ -6,6 +6,7 @@ import {
   type GameMessage,
   type InitializePayload,
   type ShellMessage,
+  type ViewportInfo,
 } from "./protocol.js";
 import { parseGameMessage, parseShellMessage } from "./validation.js";
 
@@ -13,7 +14,6 @@ export type HostState =
   | "waiting"
   | "initializing"
   | "initialized"
-  | "starting"
   | "started"
   | "paused"
   | "completed"
@@ -26,6 +26,7 @@ export interface GameHostOptions {
   gameId: string;
   expectedOrigin: string;
   settings?: InitializePayload["settings"];
+  checkpoint?: InitializePayload["checkpoint"];
   handshakeTimeoutMs?: number;
   onMessage?: (message: GameMessage) => void;
   onStateChange?: (state: HostState) => void;
@@ -37,7 +38,6 @@ export interface GameHost {
   /** Optional behaviors advertised in the accepted whs.game.ready message. */
   readonly capabilities: readonly GameCapability[];
   readonly sessionId: string;
-  start(): boolean;
   pause(): boolean;
   resume(): boolean;
   restart(): boolean;
@@ -82,13 +82,36 @@ export function createGameHost(options: GameHostOptions): GameHost {
     version: PROTOCOL_VERSION,
     type: "whs.shell.initialize",
     sessionId,
-    payload: { gameId: options.gameId, settings },
+    payload: { gameId: options.gameId, settings, ...(options.checkpoint === undefined ? {} : { checkpoint: options.checkpoint }) },
   } as const;
   const validInitialize = parseShellMessage(initializeMessage);
   if (!validInitialize.ok) throw new Error(validInitialize.error);
 
   let current: HostState = "waiting";
   let capabilities: readonly GameCapability[] = [];
+  let observer: ResizeObserver | undefined;
+  let scheduled = false;
+  let frameId: number | undefined;
+  let lastViewport: ViewportInfo | undefined;
+  const measure = () => {
+    scheduled = false;
+    if (!["initialized", "started", "paused", "completed", "failed"].includes(current)) return;
+    const rect = options.iframe.getBoundingClientRect();
+    const fullscreenElement = document.fullscreenElement;
+    const viewport: ViewportInfo = {
+      width: rect.width, height: rect.height,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      fullscreen: !!fullscreenElement && (fullscreenElement === options.iframe || fullscreenElement.contains(options.iframe)),
+    };
+    if (Object.values(viewport).some((value) => typeof value === "number" && (!Number.isFinite(value) || value <= 0))) return;
+    if (lastViewport && Object.keys(viewport).every((key) => viewport[key as keyof ViewportInfo] === lastViewport?.[key as keyof ViewportInfo])) return;
+    if (post("whs.shell.viewport", viewport)) lastViewport = viewport;
+  };
+  const scheduleViewport = () => {
+    if (scheduled || current === "destroyed") return;
+    scheduled = true;
+    frameId = window.requestAnimationFrame(measure);
+  };
   const setState = (state: HostState) => {
     current = state;
     options.onStateChange?.(state);
@@ -138,9 +161,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
     if (
       message.sessionId !== sessionId ||
       current === "timed-out" ||
-      current === "destroyed" ||
-      current === "completed" ||
-      current === "failed"
+      current === "destroyed"
     ) return;
 
     switch (message.type) {
@@ -148,10 +169,15 @@ export function createGameHost(options: GameHostOptions): GameHost {
         if (current !== "initializing") return;
         clearTimeout(timeout);
         setState("initialized");
+        scheduleViewport();
         break;
       case "whs.game.started":
-        if (current !== "starting") return;
+        if (current !== "initialized") return;
         setState("started");
+        break;
+      case "whs.game.request-restart":
+        if (!["started", "paused", "completed", "failed"].includes(current)) return;
+        setState("initialized");
         break;
       case "whs.game.checkpoint":
         if (!hasGameCapability(capabilities, "checkpoint") || (current !== "started" && current !== "paused")) return;
@@ -166,13 +192,20 @@ export function createGameHost(options: GameHostOptions): GameHost {
         break;
       case "whs.game.error":
       case "whs.game.event":
-        if (!["initialized", "starting", "started", "paused"].includes(current)) return;
+        if (!["initialized", "started", "paused"].includes(current)) return;
         break;
     }
     options.onMessage?.(message);
   };
 
   window.addEventListener("message", listener);
+  if (typeof ResizeObserver !== "undefined") {
+    observer = new ResizeObserver(scheduleViewport);
+    observer.observe(options.iframe);
+  }
+  window.addEventListener("resize", scheduleViewport);
+  window.addEventListener("orientationchange", scheduleViewport);
+  document.addEventListener("fullscreenchange", scheduleViewport);
 
   const action = (
     type: ShellMessage["type"],
@@ -184,11 +217,6 @@ export function createGameHost(options: GameHostOptions): GameHost {
     get state() { return current; },
     get capabilities() { return capabilities; },
     sessionId,
-    start() {
-      if (!action("whs.shell.start", ["initialized"])) return false;
-      setState("starting");
-      return true;
-    },
     pause() {
       if (!action("whs.shell.pause", ["started"], "pause")) return false;
       setState("paused");
@@ -200,7 +228,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
       return true;
     },
     restart() {
-      if (!action("whs.shell.restart", ["initialized", "starting", "started", "paused", "completed", "failed"], "restart")) {
+      if (!action("whs.shell.restart", ["initialized", "started", "paused", "completed", "failed"], "restart")) {
         return false;
       }
       setState("initialized");
@@ -208,7 +236,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
     },
     setVolume(volume) {
       if (!Number.isFinite(volume) || volume < 0 || volume > 1) return false;
-      if (!["initialized", "starting", "started", "paused"].includes(current)) return false;
+      if (!["initialized", "started", "paused"].includes(current)) return false;
       if (!hasGameCapability(capabilities, "volume")) return false;
       return post("whs.shell.set-volume", { volume });
     },
@@ -216,6 +244,11 @@ export function createGameHost(options: GameHostOptions): GameHost {
       if (current === "destroyed") return;
       clearTimeout(timeout);
       window.removeEventListener("message", listener);
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleViewport);
+      window.removeEventListener("orientationchange", scheduleViewport);
+      document.removeEventListener("fullscreenchange", scheduleViewport);
+      if (frameId !== undefined) window.cancelAnimationFrame(frameId);
       setState("destroyed");
     },
   };

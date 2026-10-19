@@ -75,6 +75,7 @@ export function parseGameMessage(data: unknown): ValidationResult<GameMessage> {
       break;
     case "whs.game.initialized":
     case "whs.game.started":
+    case "whs.game.request-restart":
       if (payload !== undefined || !isSessionId(message.sessionId)) {
         return fail("invalid lifecycle message");
       }
@@ -134,14 +135,22 @@ export function parseShellMessage(data: unknown): ValidationResult<ShellMessage>
         !isString(payload.gameId, 128) ||
         !isRecord(payload.settings) ||
         !isVolume(payload.settings.volume) ||
-        typeof payload.settings.soundEnabled !== "boolean"
+        typeof payload.settings.soundEnabled !== "boolean" ||
+        (payload.checkpoint !== undefined && !isString(payload.checkpoint, 256))
       ) return fail("invalid initialize payload");
       break;
-    case "whs.shell.start":
     case "whs.shell.pause":
     case "whs.shell.resume":
     case "whs.shell.restart":
       if (payload !== undefined) return fail("unexpected payload");
+      break;
+    case "whs.shell.viewport":
+      if (!isRecord(payload) || !isFiniteNumber(payload.width) || payload.width <= 0 ||
+          !isFiniteNumber(payload.height) || payload.height <= 0 ||
+          !isFiniteNumber(payload.devicePixelRatio) || payload.devicePixelRatio <= 0 ||
+          typeof payload.fullscreen !== "boolean" || Object.keys(payload).length !== 4) {
+        return fail("invalid viewport payload");
+      }
       break;
     case "whs.shell.set-volume":
       if (!isRecord(payload) || !isVolume(payload.volume)) {
