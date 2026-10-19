@@ -200,6 +200,7 @@
               "required": ["gameId", "settings"],
               "properties": {
                 "gameId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "checkpoint": { "type": "string", "minLength": 1, "maxLength": 256 },
                 "settings": {
                   "type": "object",
                   "required": ["volume", "soundEnabled"],

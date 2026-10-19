@@ -26,6 +26,7 @@ export interface GameHostOptions {
   gameId: string;
   expectedOrigin: string;
   settings?: InitializePayload["settings"];
+  checkpoint?: InitializePayload["checkpoint"];
   handshakeTimeoutMs?: number;
   onMessage?: (message: GameMessage) => void;
   onStateChange?: (state: HostState) => void;
@@ -82,7 +83,7 @@ export function createGameHost(options: GameHostOptions): GameHost {
     version: PROTOCOL_VERSION,
     type: "whs.shell.initialize",
     sessionId,
-    payload: { gameId: options.gameId, settings },
+    payload: { gameId: options.gameId, settings, ...(options.checkpoint === undefined ? {} : { checkpoint: options.checkpoint }) },
   } as const;
   const validInitialize = parseShellMessage(initializeMessage);
   if (!validInitialize.ok) throw new Error(validInitialize.error);

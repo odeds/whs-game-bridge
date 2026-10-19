@@ -44,6 +44,24 @@ function readyPayload(gameId = "game") {
 }
 
 describe("host security and lifecycle", () => {
+  it("passes an optional saved checkpoint in initialization and rejects malformed values", () => {
+    const shell = new FakeWindow();
+    const game = new FakeWindow();
+    useWindow(shell);
+    const options = { iframe: { contentWindow: game } as unknown as HTMLIFrameElement, gameId: "game", expectedOrigin: "https://game.test" };
+    expect(() => createGameHost({ ...options, checkpoint: "x".repeat(257) })).toThrow();
+    expect(() => createGameHost({ ...options, checkpoint: "" })).toThrow();
+    const host = createGameHost({ ...options, checkpoint: "hanoi-rat-king:v1:250:180" });
+    shell.dispatch(message("whs.game.ready", undefined, readyPayload()), "https://game.test", game);
+    expect(game.posts[0]?.data).toMatchObject({ type: "whs.shell.initialize", payload: { checkpoint: "hanoi-rat-king:v1:250:180" } });
+    host.destroy();
+    game.posts = [];
+    const legacy = createGameHost(options);
+    shell.dispatch(message("whs.game.ready", undefined, readyPayload()), "https://game.test", game);
+    expect(game.posts[0]?.data).toMatchObject({ payload: { gameId: "game" } });
+    expect((game.posts[0]?.data as { payload: { checkpoint?: string } }).payload.checkpoint).toBeUndefined();
+    legacy.destroy();
+  });
   it("requires the configured iframe source and origin", () => {
     const shell = new FakeWindow();
     const game = new FakeWindow();

@@ -134,7 +134,8 @@ export function parseShellMessage(data: unknown): ValidationResult<ShellMessage>
         !isString(payload.gameId, 128) ||
         !isRecord(payload.settings) ||
         !isVolume(payload.settings.volume) ||
-        typeof payload.settings.soundEnabled !== "boolean"
+        typeof payload.settings.soundEnabled !== "boolean" ||
+        (payload.checkpoint !== undefined && !isString(payload.checkpoint, 256))
       ) return fail("invalid initialize payload");
       break;
     case "whs.shell.start":
