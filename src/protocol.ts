@@ -43,7 +43,7 @@ export interface ReadyPayload {
 export interface InitializePayload {
   gameId: string;
   settings: { volume: number; soundEnabled: boolean };
-  /** Optional game-owned checkpoint from a previous visit. */
+  /** Optional previously saved game-owned checkpoint, at most 256 characters. */
   checkpoint?: string;
 }
 export interface CheckpointPayload { checkpoint: string }

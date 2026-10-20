@@ -51,6 +51,22 @@ describe('host v2', () => {
     shell.dispatch(msg('whs.game.initialized', host.sessionId), 'https://game.test', game);
     return host;
   }
+  it('passes an optional saved checkpoint at initialization and rejects malformed checkpoints', () => {
+    const shell = new FakeWindow(), game = new FakeWindow(); environment(shell);
+    const options = { iframe: iframe(game), gameId: 'game', expectedOrigin: 'https://game.test' };
+    expect(() => createGameHost({ ...options, checkpoint: 'x'.repeat(257) })).toThrow();
+    expect(() => createGameHost({ ...options, checkpoint: '' })).toThrow();
+    const host = createGameHost({ ...options, checkpoint: 'hanoi-rat-king:v1:250:180' });
+    shell.dispatch(ready, 'https://game.test', game);
+    expect(game.posts[0]?.data).toMatchObject({ type: 'whs.shell.initialize', payload: { checkpoint: 'hanoi-rat-king:v1:250:180' } });
+    host.destroy();
+    game.posts = [];
+    const withoutCheckpoint = createGameHost(options);
+    shell.dispatch(ready, 'https://game.test', game);
+    expect(game.posts[0]?.data).toMatchObject({ payload: { gameId: 'game' } });
+    expect(game.posts[0]?.data.payload.checkpoint).toBeUndefined();
+    withoutCheckpoint.destroy();
+  });
   it('rejects untrusted and v1 messages, waits for initialization, then sends a viewport; never starts play', () => {
     const shell = new FakeWindow(), game = new FakeWindow(); environment(shell);
     const errors: string[] = [];
