@@ -1,11 +1,11 @@
 export const PROTOCOL = "whs" as const;
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 export const gameCapabilities = ["pause", "restart", "checkpoint", "volume"] as const;
 export type GameCapability = (typeof gameCapabilities)[number];
 export type GameCapabilities = readonly GameCapability[];
 
-/** Returns whether a game advertised an optional Protocol v1 behavior. */
+/** Returns whether a game advertised an optional Protocol v2 behavior. */
 export function hasGameCapability(capabilities: GameCapabilities, capability: GameCapability): boolean {
   return capabilities.includes(capability);
 }
@@ -13,6 +13,7 @@ export type GameMessageType =
   | "whs.game.ready"
   | "whs.game.initialized"
   | "whs.game.started"
+  | "whs.game.request-restart"
   | "whs.game.checkpoint"
   | "whs.game.completed"
   | "whs.game.failed"
@@ -20,7 +21,7 @@ export type GameMessageType =
   | "whs.game.event";
 export type ShellMessageType =
   | "whs.shell.initialize"
-  | "whs.shell.start"
+  | "whs.shell.viewport"
   | "whs.shell.pause"
   | "whs.shell.resume"
   | "whs.shell.restart"
@@ -52,6 +53,7 @@ export interface ErrorPayload { message: string; code?: string }
 export type EventProperties = Record<string, string | number | boolean>;
 export interface EventPayload { name: string; properties?: EventProperties }
 export interface VolumePayload { volume: number }
+export interface ViewportInfo { width: number; height: number; devicePixelRatio: number; fullscreen: boolean }
 
 type Message<TType extends MessageType> = {
   protocol: typeof PROTOCOL;
@@ -64,7 +66,7 @@ type SessionPayloadMessage<TType extends MessageType, TPayload> = SessionMessage
 
 export type GameMessage =
   | PayloadMessage<"whs.game.ready", ReadyPayload>
-  | SessionMessage<"whs.game.initialized" | "whs.game.started">
+  | SessionMessage<"whs.game.initialized" | "whs.game.started" | "whs.game.request-restart">
   | SessionPayloadMessage<"whs.game.checkpoint", CheckpointPayload>
   | SessionMessage<"whs.game.completed"> & { payload?: CompletedPayload }
   | SessionPayloadMessage<"whs.game.failed", FailedPayload>
@@ -73,13 +75,15 @@ export type GameMessage =
 
 export type ShellMessage =
   | SessionPayloadMessage<"whs.shell.initialize", InitializePayload>
-  | SessionMessage<"whs.shell.start" | "whs.shell.pause" | "whs.shell.resume" | "whs.shell.restart">
-  | SessionPayloadMessage<"whs.shell.set-volume", VolumePayload>;
+  | SessionMessage<"whs.shell.pause" | "whs.shell.resume" | "whs.shell.restart">
+  | SessionPayloadMessage<"whs.shell.set-volume", VolumePayload>
+  | SessionPayloadMessage<"whs.shell.viewport", ViewportInfo>;
 
 export const gameMessageTypes: readonly GameMessageType[] = [
   "whs.game.ready",
   "whs.game.initialized",
   "whs.game.started",
+  "whs.game.request-restart",
   "whs.game.checkpoint",
   "whs.game.completed",
   "whs.game.failed",
@@ -88,7 +92,7 @@ export const gameMessageTypes: readonly GameMessageType[] = [
 ];
 export const shellMessageTypes: readonly ShellMessageType[] = [
   "whs.shell.initialize",
-  "whs.shell.start",
+  "whs.shell.viewport",
   "whs.shell.pause",
   "whs.shell.resume",
   "whs.shell.restart",

@@ -29,7 +29,7 @@ const received = (message: ShellMessage | string, reaction: string) => {
 };
 
 bridge.onInitialize((message) => received(message, "INITIALIZE received"));
-bridge.onStart(() => received("whs.shell.start", "START received"));
+bridge.onViewport(({ width, height, fullscreen }) => received("whs.shell.viewport", `${width}x${height} fullscreen=${fullscreen}`));
 bridge.onPause(() => received("whs.shell.pause", "PAUSE received"));
 bridge.onResume(() => received("whs.shell.resume", "RESUME received"));
 bridge.onRestart(() => received("whs.shell.restart", "RESTART received"));
@@ -47,7 +47,7 @@ element<HTMLButtonElement>("ready").onclick = async () => {
   refresh();
 };
 element<HTMLButtonElement>("started").onclick = () => {
-  if (bridge.state !== "starting") return;
+  if (bridge.state !== "initialized") return;
   bridge.started();
   sent("whs.game.started");
 };
@@ -67,7 +67,7 @@ element<HTMLButtonElement>("fail").onclick = () => {
   sent("whs.game.failed");
 };
 element<HTMLButtonElement>("error").onclick = () => {
-  if (!["initialized", "starting", "started", "paused"].includes(bridge.state)) return;
+  if (!["initialized", "started", "paused"].includes(bridge.state)) return;
   bridge.error({ message: "mock error", code: "MOCK" });
   sent("whs.game.error");
 };

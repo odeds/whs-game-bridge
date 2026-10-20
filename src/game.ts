@@ -10,6 +10,7 @@ import {
   type GameCapabilities,
   type GameMessage,
   type ShellMessage,
+  type ViewportInfo,
 } from "./protocol.js";
 import { parseGameMessage, parseShellMessage } from "./validation.js";
 
@@ -17,7 +18,6 @@ export type GameState =
   | "new"
   | "ready"
   | "initialized"
-  | "starting"
   | "started"
   | "paused"
   | "completed"
@@ -37,13 +37,15 @@ export interface GameBridge {
   readonly sessionId?: string;
   ready(): Promise<void>;
   started(): void;
+  /** Begin a new attempt before replaying gameplay. */
+  requestRestart(): boolean;
   checkpoint(payload: CheckpointPayload): void;
   completed(payload?: CompletedPayload): void;
   failed(payload: FailedPayload): void;
   error(payload: ErrorPayload): void;
   event(payload: EventPayload): void;
   onInitialize(callback: (message: Extract<ShellMessage, { type: "whs.shell.initialize" }>) => void): () => void;
-  onStart(callback: () => void): () => void;
+  onViewport(callback: (viewport: ViewportInfo) => void): () => void;
   onPause(callback: () => void): () => void;
   onResume(callback: () => void): () => void;
   onRestart(callback: () => void): () => void;
@@ -130,9 +132,8 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
     }
 
     switch (message.type) {
-      case "whs.shell.start":
-        if (current !== "initialized") return;
-        current = "starting";
+      case "whs.shell.viewport":
+        if (!["initialized", "started", "paused", "completed", "failed"].includes(current)) return;
         break;
       case "whs.shell.pause":
         if (!hasGameCapability(capabilities, "pause") || current !== "started") return;
@@ -143,11 +144,11 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
         current = "started";
         break;
       case "whs.shell.restart":
-        if (!hasGameCapability(capabilities, "restart") || !["initialized", "starting", "started", "paused", "completed", "failed"].includes(current)) return;
+        if (!hasGameCapability(capabilities, "restart") || !["initialized", "started", "paused", "completed", "failed"].includes(current)) return;
         current = "initialized";
         break;
       case "whs.shell.set-volume":
-        if (!hasGameCapability(capabilities, "volume") || !["initialized", "starting", "started", "paused"].includes(current)) return;
+        if (!hasGameCapability(capabilities, "volume") || !["initialized", "started", "paused"].includes(current)) return;
         break;
     }
     notify(message);
@@ -183,9 +184,15 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
       return readyPromise;
     },
     started() {
-      if (current !== "starting") return;
+      if (current !== "initialized") return;
       emit("whs.game.started");
       current = "started";
+    },
+    requestRestart() {
+      if (!["started", "paused", "completed", "failed"].includes(current)) return false;
+      emit("whs.game.request-restart");
+      current = "initialized";
+      return true;
     },
     checkpoint(payload) {
       if (hasGameCapability(capabilities, "checkpoint") && (current === "started" || current === "paused")) {
@@ -203,19 +210,23 @@ export function createGameBridge(options: GameBridgeOptions): GameBridge {
       current = "failed";
     },
     error(payload) {
-      if (sessionId && ["initialized", "starting", "started", "paused"].includes(current)) {
+      if (sessionId && ["initialized", "started", "paused"].includes(current)) {
         emit("whs.game.error", payload);
       }
     },
     event(payload) {
-      if (sessionId && ["initialized", "starting", "started", "paused"].includes(current)) {
+      if (sessionId && ["initialized", "started", "paused"].includes(current)) {
         emit("whs.game.event", payload);
       }
     },
     onInitialize(callback) {
       return on("whs.shell.initialize", callback as (message: ShellMessage) => void);
     },
-    onStart(callback) { return on("whs.shell.start", () => callback()); },
+    onViewport(callback) {
+      return on("whs.shell.viewport", (message) => {
+        if (message.type === "whs.shell.viewport") callback(message.payload);
+      });
+    },
     onPause(callback) { return on("whs.shell.pause", () => callback()); },
     onResume(callback) { return on("whs.shell.resume", () => callback()); },
     onRestart(callback) { return on("whs.shell.restart", () => callback()); },

@@ -1,115 +1,55 @@
-# @whs/game-bridge
+# @whs/game-bridge — Protocol v2
 
-A small, framework-independent browser `postMessage` boundary between a WHS shell and separately hosted games. It implements **WHS Protocol v1**; package and protocol versions are intentionally separate.
+Breaking, framework-independent `postMessage` SDK for separately hosted WHG games in WHP. **Protocol v1 is not accepted.** Pin an immutable SDK commit in both hosts and games.
 
-## Install
+## Ownership and startup
 
-```sh
-npm install @whs/game-bridge
-```
-
-## Minimal game integration
-
-The game must be embedded in an iframe and must be configured with the shell's exact origin (never `*`). It announces readiness, waits for initialization, then reports game lifecycle events.
+WHP owns the outer chapter journey, media, iframe, persistence and optional toolbar. WHG owns menus, difficulty, Ready, gameplay, outcomes and replay. `initialized` means the game menu is available, **not** that play began. WHP never sends Start and never triggers gameplay. Start stays on a game-owned user gesture (including audio unlock/pointer lock).
 
 ```ts
-import { createGameBridge } from "@whs/game-bridge";
-
-const whs = createGameBridge({
-  gameId: "emu-war",
-  parentOrigin: "https://whs.example",
-  capabilities: ["pause", "restart", "checkpoint", "volume"],
-});
-whs.onStart(() => {
-  startGame();
-  whs.started(); // acknowledge that the game started
-});
-whs.onPause(() => pauseGame());
-whs.onResume(() => resumeGame());
-whs.onRestart(() => resetGame());
-
-await whs.ready(); // sends ready; resolves after shell initialize
-whs.checkpoint({ checkpoint: "wave-2" });
-whs.completed({ score: 1250 });
+import { createGameBridge } from '@whs/game-bridge';
+const bridge = createGameBridge({ gameId: 'chapter-id', parentOrigin: 'https://shell.example', capabilities: ['pause','restart','checkpoint'] });
+bridge.onInitialize(({ payload }) => restoreCheckpoint(payload.checkpoint));
+bridge.onViewport(({ width, height, devicePixelRatio, fullscreen }) => fitGame(width, height));
+bridge.onPause(() => pauseGame());
+bridge.onResume(() => resumeGame());
+bridge.onRestart(() => showGameMenu()); // not startGame()
+void bridge.ready(); // ready → initialize → initialized; do not start a timer here
+startButton.onclick = async () => {
+  const started = await startGameFromGesture();
+  if (started) bridge.started();
+};
+replayButton.onclick = async () => {
+  bridge.requestRestart(); // ends old attempt BEFORE starting the next
+  const started = await startGameFromGesture();
+  if (started) bridge.started();
+};
+// On actual game outcomes only:
+bridge.completed({ score: 100 }); // or bridge.failed({ reason: 'out-of-time' });
 ```
-
-## Minimal host integration
-
-`expectedOrigin` must come from WHS's trusted game catalog, not a game message. The SDK validates both that origin and the exact iframe `contentWindow`, generates a fresh session ID, and ignores stale-session messages.
 
 ```ts
-import { createGameHost } from "@whs/game-bridge";
-
-const playButton = document.querySelector<HTMLButtonElement>("#play")!;
-const game = createGameHost({
-  iframe: document.querySelector("#game")!,
-  gameId: "emu-war",
-  expectedOrigin: "https://games.example",
-  settings: { volume: 0.8, soundEnabled: true },
-  onMessage: (message) => console.log(message.type),
-  onStateChange: (state) => {
-    if (state === "initialized") {
-      // Enable the shell's Play button; call game.start() from its handler.
-    }
-  },
+import { createGameHost } from '@whs/game-bridge';
+const host = createGameHost({ iframe, gameId: 'chapter-id', expectedOrigin: 'https://game.example',
+  checkpoint: savedCheckpoint, onStateChange: state => { if (state === 'initialized') hideLoadingOverlay(); },
+  onMessage: message => { /* persist checkpoint/completed/failed; reset per-attempt UI on request-restart */ },
 });
-
-// The host automatically sends initialize after a valid game ready + origin/source check.
-playButton.addEventListener("click", () => {
-  if (game.state === "initialized") game.start();
-});
-
-// During play, only call optional controls the game advertised:
-if (game.capabilities.includes("pause")) game.pause();
-if (game.capabilities.includes("restart")) game.restart();
-if (game.capabilities.includes("volume")) game.setVolume(0.5);
+// No host.start(). Optional toolbar controls only if advertised:
+if (host.capabilities.includes('pause')) host.pause();
+if (host.capabilities.includes('restart')) host.restart(); // returns to game menu
+host.destroy(); // when iframe is torn down or replaced
 ```
 
-## Public API
+## Wire contract
 
-Import the SDK and protocol types from the package root; deep imports are not supported:
+Each envelope has `{ protocol: 'whs', version: 2, type, sessionId?, payload? }`. A game's `whs.game.ready` has `{ gameId, capabilities }` but no session ID. The host replies `whs.shell.initialize` with `{ gameId, settings: { volume, soundEnabled }, checkpoint? }` and its fresh session ID. The game responds `whs.game.initialized`. The host exposes the iframe, sends `whs.shell.viewport`, and sends later viewport changes whenever the iframe dimensions, device pixel ratio, orientation or fullscreen status change. The payload is `{ width, height, devicePixelRatio, fullscreen }` with finite positive CSS-pixel dimensions and DPR. A ResizeObserver plus coalesced animation frame and unchanged-message check prevent floods; games must not resize the host iframe in response.
 
-```ts
-import {
-  createGameBridge, createGameHost,
-  PROTOCOL, PROTOCOL_VERSION,
-  gameCapabilities, hasGameCapability,
-  type GameBridge, type GameBridgeOptions, type GameState,
-  type GameHost, type GameHostOptions, type HostState,
-  type GameCapability, type GameCapabilities,
-  type GameMessage, type ShellMessage,
-  type ReadyPayload, type InitializePayload, type CheckpointPayload,
-  type CompletedPayload, type FailedPayload, type ErrorPayload,
-  type EventPayload, type EventProperties, type VolumePayload,
-} from "@whs/game-bridge";
-```
+On the game's own successful Start, emit `whs.game.started` **once per attempt**. `whs.game.checkpoint` (advertise `checkpoint`), `whs.game.completed`, `whs.game.failed`, `whs.game.error` and bounded `whs.game.event` retain their roles. `pause`/`resume`, `restart` and `set-volume` require advertised capabilities. Shell `restart` returns both peers to `initialized` and calls the game's reset-to-menu callback; it does not start play. Game-owned replay from `started`, `paused`, `completed` or `failed` calls `requestRestart()` before starting another attempt; the validated `whs.game.request-restart` advances both peers to `initialized` and the new successful start emits `started`. Duplicates within an attempt are ignored; terminal reports in subsequent attempts are accepted. A saved checkpoint is passed at initialization for the game to restore, while replay begins a fresh attempt (game must clear its consumed checkpoint). WHP keeps chapter-completed precedence in persistence; this protocol does not store attempt history.
 
-## Lifecycle and capabilities
+## Security
 
-`ready`, shell `initialize`, shell `start`, game `initialized`, and game `started` are mandatory lifecycle behavior. A game must always accept a valid `start` after initialization and acknowledge it with `started()` when it has started.
+Incoming messages require exact HTTP(S) parent/iframe origin, exact source window, valid protocol/version, bounded UTF-8 serialized size (≤8 KiB), validated payloads and matching session after initialization. The game ID must match during handshake. Malformed or stale messages cannot trigger actions. Only the initial ready has no session; no wildcard origin, player identity, authentication, tokens or raw postMessage bypass is allowed. Schema: `schema/v2/protocol.schema.json`.
 
-The `capabilities` in `whs.game.ready` are authoritative declarations of optional behavior:
+## Verify
 
-- `pause` permits both shell `pause` and `resume`; without it, the host returns `false` and sends neither command, and the game ignores either command if received.
-- `restart` permits shell `restart`; without it, the host does not send it and the game ignores it.
-- `volume` permits shell `setVolume`; without it, the host does not send it and the game ignores it.
-- `checkpoint` permits the game to emit `whs.game.checkpoint`; without it, `bridge.checkpoint()` emits nothing and the host ignores checkpoint messages.
-
-`GameHost.capabilities` is the de-duplicated capability set from the accepted ready handshake. Use `hasGameCapability(game.capabilities, "pause")` when a typed check is preferable to `includes`.
-
-## Protocol safety
-
-All received messages are runtime-validated. Protocol v1 accepts only its documented message types, version `1`, bounded payloads (whole UTF-8 serialized message ≤8 KiB), and session IDs after initialization. `whs.game.event` is deliberately bounded: its name is 64 characters max and its optional properties contain at most 20 primitive values. Unknown additive fields are ignored for v1 compatibility.
-
-No player identity, authentication, tokens, persistence, analytics, or WHS API access belongs in this protocol.
-
-## Development
-
-```sh
-npm run typecheck
-npm test
-npm run build
-npm run test:browser
-```
-
-The deterministic iframe fixture is in `examples/mock-game`. It displays bridge state, session ID, and the last sent/received messages, and provides lifecycle controls.
+`npm ci && npm run typecheck && npm test && npm run build && npm run test:browser`. The mock game fixture under `examples/mock-game` exercises the iframe handshake without shell-owned Start.
