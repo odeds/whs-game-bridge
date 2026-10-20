@@ -1,4 +1,6 @@
-# WHS Game Bridge
+# WHS Game Bridge — historical Protocol v1 implementation plan
+
+> **Archive, not an API reference.** The implementation below describes the retired v1 design, including shell-owned Start. It is **not implemented or accepted** by the current SDK. Protocol v2 is the only supported runtime contract; see [README.md](README.md) and [schema/v2/protocol.schema.json](schema/v2/protocol.schema.json). Do not build new games from this document.
 
 ## Purpose
 
