@@ -47,7 +47,11 @@ export interface InitializePayload {
   checkpoint?: string;
 }
 export interface CheckpointPayload { checkpoint: string }
-export interface CompletedPayload { score?: number }
+export interface CompletedPayload {
+  score?: number;
+  /** Persist success now while retaining the game's interactive ending presentation. */
+  presentsEndingReport?: boolean;
+}
 export interface FailedPayload { reason: string }
 export interface ErrorPayload { message: string; code?: string }
 export type EventProperties = Record<string, string | number | boolean>;
