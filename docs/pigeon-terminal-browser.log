@@ -1,0 +1,23 @@
+
+> @whs/game-bridge@0.1.0 test:browser
+> npm run build && playwright test
+
+
+> @whs/game-bridge@0.1.0 build
+> npm run build:sdk && npm run build:example
+
+
+> @whs/game-bridge@0.1.0 build:sdk
+> tsc -p tsconfig.json
+
+
+> @whs/game-bridge@0.1.0 build:example
+> tsc -p examples/mock-game/tsconfig.json
+
+
+Running 2 tests using 1 worker
+
+  ✓  1 tests/browser/integration.spec.ts:22:1 › game-owned start, viewport, pause, restart and multiple attempts (520ms)
+  ✓  2 tests/browser/integration.spec.ts:49:1 › rejects invalid origins and sessions (248ms)
+
+  2 passed (1.1s)
