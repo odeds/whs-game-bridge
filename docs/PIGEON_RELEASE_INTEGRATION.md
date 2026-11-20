@@ -1,31 +1,42 @@
-# Pigeon release integration — NO-GO
+# Pigeon engineering integration — NO-GO
 
-Contract commit: 45aca4f8db660426bf4531e2b1a8ec4358ef9bad (unchanged).
-WHP #96 and Academy #220 now pin it. Academy reports genuine Drill 15 success
-through AttemptLatch, checkpoint first and presentsEndingReport:true second;
-graduation dismissal is presentation only. No new Bridge receipt or identity
-message exists: owner binding, outbox and database receipts are WHP-only.
-Origin, source, game ID, session and lifecycle validation are unchanged.
+Reviewed runtime contract `45aca4f8db660426bf4531e2b1a8ec4358ef9bad` is unchanged
+and pinned by both WHP #96 and Academy #220. The optional validated boolean
+`presentsEndingReport` retains presentation; it is not a durable receipt.
+Academy reports genuine success before the five-step graduation is dismissed.
+Identity/outbox/commit receipts stay entirely in WHP, not Bridge. Origin, source,
+session, game identity and lifecycle validation remain unchanged.
 
-Fresh local SDK verification: npm run typecheck, npm test (47 passed),
-npm run test:browser (build + 2 passed). Initial browser execution collided with
-the concurrently running WHP fixture on port 4174; serial rerun passed.
-Companion evidence: WHP 10 focused tests, PostgreSQL deferred commit rollback and
-lost response retries; Academy 595 unit tests and 7 real-SDK browser tests,
-including each graduation-step interruption. These separate fixtures do not
-establish the entire real Academy/WHP combined failure matrix.
+Fresh SDK checks: typecheck, build, **47 unit tests and 2 browser tests pass**.
+The previous supported SDK `1bff976bf55355e907c4dcaf72c3685137e3a989` was rebuilt
+and served to the new WHP integration fixtures: **6 pass** (normal/held reports,
+failure, replay and phone presentation). This is not every old shipped game.
 
-NO-GO: anonymous identity-merge concurrency and full concurrent valid-tab,
-old-client and identity/browser matrix remain open in WHP. No exactly-once claim.
-There is no automatic recovery before a validated terminal reaches WHP durable
-storage, or when tab/storage/session/identity recovery prerequisites are lost.
-See WHP docs/PIGEON_RELEASE_BLOCKERS.md and Academy RELEASE_QA.md for limits.
+New combined evidence uses actual production Academy inside WHP's actual game
+player and PostgreSQL 18.7, not two independent fixtures. Three genuine Drill 15
+runs pass: normal completion, aborted request and lost response after commit.
+All five graduation steps remain interactive; same-tab reload recovery produces
+matching attempt receipts and one attempt/chapter completion. Real valid tabs
+preserve independent checkpoint improvements. WHP's minimal source-write/identity-
+merge correction passes 50 race-enabled PostgreSQL/MemoryStore repetitions.
+Exact records/messages/IDs: WHP docs/pigeon-release-evidence/final-*.
 
-Required owner-authorized order: review SDK contract, supporting WHP first,
-Academy last. No registry publication is needed for immutable Git pins. Rollback
-Academy before WHP; retain receipt support for loaded clients/pending outboxes,
-retain all durable rows and monotonic checkpoint reconciliation. An owner-controlled
-pause/drain is required before incompatible host rollback. Physical Safari/Android
-and exact-commit HTTPS integration acceptance remain manual gates.
+Still NO-GO: the entire requested production matrix is not closed (simultaneous
+completions, pending identity changes, process restart, successful production replay,
+and reload at each graduation step). Full regression results and all skips are in
+WHP docs/pigeon-release-evidence/final-REGRESSIONS.md. No missing test is claimed as
+a confirmed new production defect or waived into a pass.
 
-All existing PRs remain drafts. No merge, deploy, publish or autoDeploy change.
+Supported recovery requires original same-tab/origin storage and valid player
+session plus explicit Load. Pre-host-capture interruption, tab/storage/session loss
+and identity replacement have no automatic terminal recovery guarantee. Quarantine
+identity conflicts; never relabel terminals or infer victory from fifteen checkpoints.
+At-least-once transport with idempotent effects, never exactly-once network delivery.
+
+Owner-authorized order (NOT executed): immutable SDK contract → supporting WHP →
+Academy last. Rollback Academy first; keep WHP receipts/outboxes/monotonic saves for
+loaded clients and pending intents until an owner-controlled pause/drain permits
+rollback. Physical devices, hosted CI and authorized exact-commit HTTPS acceptance
+remain separate. No registry publication is required for these Git pins.
+
+All three PRs remain drafts. No merge, deploy, publish or autoDeploy change.
