@@ -1,4 +1,10 @@
-# Pigeon engineering integration — NO-GO
+# Pigeon engineering integration
+
+**Current: [final four gates — local ENGINEERING GO](PIGEON_FINAL_FOUR_GATES.md).**
+The dated NO-GO assessment below is retained as historical evidence, not the
+current disposition. SDK runtime/contract unchanged; no SDK tests rerun.
+
+## Historical integration assessment — NO-GO
 
 Reviewed runtime contract `45aca4f8db660426bf4531e2b1a8ec4358ef9bad` is unchanged
 and pinned by both WHP #96 and Academy #220. The optional validated boolean

@@ -1,4 +1,10 @@
-# Pigeon continuation verification — 2026-11-20
+# Pigeon release verification
+
+**Current: [final four gates — local ENGINEERING GO](PIGEON_FINAL_FOUR_GATES.md),
+2026-11-21.** SDK runtime/contract unchanged; tests deliberately not rerun. The
+following earlier report is preserved verbatim as dated historical evidence.
+
+## Pigeon continuation verification — 2026-11-20
 
 **NO-GO for the combined release.** Tested SDK runtime: `45aca4f` (PR #8).
 
