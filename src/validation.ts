@@ -87,7 +87,9 @@ export function parseGameMessage(data: unknown): ValidationResult<GameMessage> {
       break;
     case "whs.game.completed":
       if (
-        (payload !== undefined && (!isRecord(payload) || (payload.score !== undefined && !isFiniteNumber(payload.score)))) ||
+        (payload !== undefined && (!isRecord(payload) ||
+          (payload.score !== undefined && !isFiniteNumber(payload.score)) ||
+          (payload.presentsEndingReport !== undefined && typeof payload.presentsEndingReport !== "boolean"))) ||
         !isSessionId(message.sessionId)
       ) return fail("invalid completed payload");
       break;

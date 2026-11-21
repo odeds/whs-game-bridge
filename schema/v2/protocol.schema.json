@@ -244,6 +244,9 @@
               "properties": {
                 "score": {
                   "type": "number"
+                },
+                "presentsEndingReport": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": true

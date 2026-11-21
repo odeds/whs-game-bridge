@@ -46,6 +46,21 @@ Each envelope has `{ protocol: 'whs', version: 2, type, sessionId?, payload? }`.
 
 On the game's own successful Start, emit `whs.game.started` **once per attempt**. `whs.game.checkpoint` (advertise `checkpoint`), `whs.game.completed`, `whs.game.failed`, `whs.game.error` and bounded `whs.game.event` retain their roles. `pause`/`resume`, `restart` and `set-volume` require advertised capabilities. Shell `restart` returns both peers to `initialized` and calls the game's reset-to-menu callback; it does not start play. Game-owned replay from `started`, `paused`, `completed` or `failed` calls `requestRestart()` before starting another attempt; the validated `whs.game.request-restart` advances both peers to `initialized` and the new successful start emits `started`. Duplicates within an attempt are ignored; terminal reports in subsequent attempts are accepted. A saved checkpoint is passed at initialization for the game to restore, while replay begins a fresh attempt (game must clear its consumed checkpoint). WHP keeps chapter-completed precedence in persistence; this protocol does not store attempt history.
 
+### Game-owned ending reports
+
+`completed({ score, presentsEndingReport: true })` reports genuine success immediately,
+while asking a supporting host to retain the interactive game ending until the player
+chooses to continue. Omit the flag (or use `false`) for the normal host-owned ending.
+This optional v2 field does not change lifecycle validation or restart semantics;
+finishing/skipping the presentation must not send another terminal report. Replays
+still call `requestRestart()` and then `started()` for a separate attempt.
+
+This is a presentation hint, **not a durable acknowledgement**. Hosts must persist
+completion and provide recovery/retry independently. A checkpoint, including a
+checkpoint claiming all missions passed, is not proof of completion. Older SDK
+validators accepted extra payload fields but did not type or validate this flag;
+older hosts may ignore it. Pin a supporting host before relying on retained endings.
+
 ## Security
 
 Incoming messages require exact HTTP(S) parent/iframe origin, exact source window, valid protocol/version, bounded UTF-8 serialized size (≤8 KiB), validated payloads and matching session after initialization. The game ID must match during handshake. Malformed or stale messages cannot trigger actions. Only the initial ready has no session; no wildcard origin, player identity, authentication, tokens or raw postMessage bypass is allowed. Schema: `schema/v2/protocol.schema.json`.

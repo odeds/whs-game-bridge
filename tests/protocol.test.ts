@@ -7,6 +7,12 @@ const message = (type: string, payload?: unknown, sessionId: string | null = 'se
 });
 const viewport = { width: 640, height: 480, devicePixelRatio: 2, fullscreen: false };
 describe('breaking Protocol v2 validation', () => {
+  it.each([undefined, false, true])('accepts optional ending presentation flag %s', flag => {
+    expect(parseGameMessage(message('whs.game.completed', { score: 42, presentsEndingReport: flag })).ok).toBe(true);
+  });
+  it.each([null, 1, 'true', {}, []])('rejects malformed ending presentation flag %s', flag => {
+    expect(parseGameMessage(message('whs.game.completed', { presentsEndingReport: flag })).ok).toBe(false);
+  });
   it.each([
     message('whs.game.ready', { gameId: 'game', capabilities: ['pause'] }, null),
     message('whs.game.initialized'), message('whs.game.started'), message('whs.game.request-restart'),
